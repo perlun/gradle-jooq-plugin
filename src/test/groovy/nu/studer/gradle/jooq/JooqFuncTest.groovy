@@ -117,20 +117,13 @@ class JooqFuncTest extends BaseFuncTest {
         given:
         buildFile << buildWithJooqPluginDSL(null, 'src/generated/jooq')
         buildFile << """
-def newTargetDir = file('src/generated/jooq/other')
 jooq {
   main {
-    generationTool {
-      generator {
-        target {
-          directory = newTargetDir
-        }
-      }
-    }
+    outputDir = file('src/generated/jooq/other')
   }
 }
 
-jooq.main.jooqConfiguration.generator.target.directory = file('src/generated/jooq/yet/another')
+jooq.main.outputDir = file('src/generated/jooq/yet/another')
 
 afterEvaluate {
   SourceSetContainer sourceSets = project.getConvention().getPlugin(JavaPluginConvention.class).getSourceSets()
@@ -475,6 +468,7 @@ ${jooqEdition != null ? "jooqEdition = nu.studer.gradle.jooq.JooqEdition.${jooqE
 
 jooq {
   main {
+    ${targetDirectory != null ? "outputDir = file('$targetDirectory')" : ""}
     generationTool {
       logging = org.jooq.meta.jaxb.Logging.WARN
       jdbc {
@@ -510,7 +504,6 @@ jooq {
         }
         target {
           ${targetPackageName != null ? "packageName = '$targetPackageName'" : "packageName = 'nu.studer.sample'"}
-          ${targetDirectory != null ? "directory = '$targetDirectory'" : ""}
         }
       }
     }

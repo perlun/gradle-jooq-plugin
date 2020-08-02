@@ -17,6 +17,7 @@ package nu.studer.gradle.jooq;
 
 import org.gradle.api.Action;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
 import org.gradle.api.file.FileCollection;
@@ -36,6 +37,8 @@ import org.gradle.process.JavaExecSpec;
 import org.jooq.Constants;
 import org.jooq.codegen.GenerationTool;
 import org.jooq.meta.jaxb.Configuration;
+import org.jooq.meta.jaxb.Generator;
+import org.jooq.meta.jaxb.Target;
 import org.xml.sax.SAXException;
 
 import javax.inject.Inject;
@@ -66,8 +69,6 @@ public class JooqGenerate extends DefaultTask {
 
     private final ProjectLayout projectLayout;
     private final ExecOperations execOperations;
-
-    private static final Action<Configuration> OUTPUT_DIRECTORY_NORMALIZATION = c -> c.getGenerator().getTarget().setDirectory(null);
 
     @Inject
     public JooqGenerate(JooqConfig config, FileCollection runtimeClasspath, ObjectFactory objects, ProjectLayout projectLayout, ExecOperations execOperations) {
@@ -130,12 +131,13 @@ public class JooqGenerate extends DefaultTask {
 
     private void normalizeConfiguration() {
         if (normalizedConfiguration == null) {
-            Configuration clonedConfiguration = cloneObject(config.getJooqConfiguration());
-            OUTPUT_DIRECTORY_NORMALIZATION.execute(clonedConfiguration);
             if (generationToolNormalization != null) {
+                Configuration clonedConfiguration = cloneObject(config.getJooqConfiguration());
                 generationToolNormalization.execute(clonedConfiguration);
+                normalizedConfiguration = clonedConfiguration;
+            } else {
+                normalizedConfiguration = config.getJooqConfiguration();
             }
-            normalizedConfiguration = clonedConfiguration;
         }
     }
 
@@ -143,6 +145,10 @@ public class JooqGenerate extends DefaultTask {
     public void generate() {
         // define a config file to which the jOOQ code generation configuration is written to
         File configFile = new File(getTemporaryDir(), "config.xml");
+
+        // set target directory
+        Target target = ensureTargetIsPresent(config.getJooqConfiguration());
+        target.setDirectory(config.getOutputDir().get().getAsFile().getAbsolutePath());
 
         // write jOOQ code generation configuration to config file
         writeConfiguration(config.getJooqConfiguration(), configFile);
@@ -156,8 +162,22 @@ public class JooqGenerate extends DefaultTask {
         }
     }
 
-    private void writeConfiguration(Configuration config, File file) {
-        try (OutputStream fs = new FileOutputStream(file)) {
+    private Target ensureTargetIsPresent(Configuration configuration) {
+        if (configuration.getGenerator() == null) {
+            configuration.withGenerator(new Generator().withTarget(new Target()));
+        } else if (configuration.getGenerator().getTarget() == null) {
+            configuration.getGenerator().withTarget(new Target());
+        }
+
+        if (configuration.getGenerator().getTarget().getDirectory() != null) {
+            throw new InvalidUserDataException("Target directory must be set via jooq { " + config.name + " { outputDir = <target directory> } }");
+        }
+
+        return configuration.getGenerator().getTarget();
+    }
+
+    private void writeConfiguration(Configuration configuration, File targetFile) {
+        try (OutputStream fs = new FileOutputStream(targetFile)) {
             SchemaFactory sf = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
             Schema schema = sf.newSchema(GenerationTool.class.getResource("/xsd/" + Constants.XSD_CODEGEN));
 
@@ -165,18 +185,18 @@ public class JooqGenerate extends DefaultTask {
             Marshaller marshaller = ctx.createMarshaller();
             marshaller.setSchema(schema);
 
-            marshaller.marshal(config, fs);
+            marshaller.marshal(configuration, fs);
         } catch (IOException | JAXBException | SAXException e) {
             throw new TaskExecutionException(JooqGenerate.this, e);
         }
     }
 
-    private ExecResult executeJooq(final File configFile) {
+    private ExecResult executeJooq(File configurationFile) {
         return execOperations.javaexec(spec -> {
             spec.setMain("org.jooq.codegen.GenerationTool");
             spec.setClasspath(runtimeClasspath);
             spec.setWorkingDir(projectLayout.getProjectDirectory());
-            spec.args(configFile);
+            spec.args(configurationFile);
 
             if (javaExecSpec != null) {
                 javaExecSpec.execute(spec);
