@@ -15,12 +15,12 @@
  */
 package nu.studer.gradle.jooq.jaxb
 
+import jakarta.xml.bind.annotation.XmlElement
 import org.gradle.api.InvalidUserDataException
 import org.jooq.Constants
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import javax.xml.bind.annotation.XmlElement
 import java.lang.reflect.Field
 import java.lang.reflect.ParameterizedType
 
@@ -64,7 +64,15 @@ class JaxbConfigurationBridge {
 
                 // determine the name of a list element and the element type
                 Field field = target.class.declaredFields.find { it.name == "$methodName" }
-                String nameOfChildren = field.getAnnotation(XmlElement).name()
+
+                XmlElement jakartaXmlElement = field.getAnnotation(jakarta.xml.bind.annotation.XmlElement);
+
+                if (jakartaXmlElement == null) {
+                    throw new RuntimeException("jakarta.xml XmlElement annotation found on ${target.class.name}. Unsupported jOOQ version? (Only versions >= 3.16.0 are supported by this version of the plugin)")
+                }
+
+                String nameOfChildren = jakartaXmlElement.name()
+
                 ParameterizedType elementType = field.getGenericType()
                 Class classOfChildren = elementType.actualTypeArguments.first()
 
@@ -84,7 +92,7 @@ class JaxbConfigurationBridge {
             }
         } else {
             LOGGER.warn("Cannot find configuration container element '$methodName' on '$path'. " +
-                "Make sure to use the equal sign to set simple configuration property values.")
+                    "Make sure to use the equal sign to set simple configuration property values.")
             throw new MissingMethodException(methodName, getClass(), args)
         }
     }

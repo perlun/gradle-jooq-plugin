@@ -45,7 +45,7 @@ tasks.named('generateJooq').configure { outputs.cacheIf { true } }
         buildFile << buildWithJooqPluginDSL()
 
         when:
-        def result = runWithArguments('generateJooq')
+        def result = runWithArguments('generateJooq', '--info', '--stacktrace')
 
         then:
         fileExists('build/generated-src/jooq/main/nu/studer/sample/jooq_test/tables/Foo.java')
